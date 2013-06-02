@@ -1,0 +1,610 @@
+﻿<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en-us">
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+    <title>TransMap - Sydney</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta name="description" content=""/>
+    <meta name="author" content=""/>
+    <link rel="stylesheet" href="style.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="../jqplot/jquery.jqplot.min.css" />
+    <script type="text/javascript" src="../js/jquery.min.js"></script>
+    <script type="text/javascript" src="../js/raphael.min.js"></script>
+    <script type="text/javascript" src="../js/kartograph.min.js"></script>
+    <script src="../js/jquery.qtip.min.js"></script>
+    <script type="text/javascript" src="../jqplot/jquery.jqplot.min.js"></script>
+    <script type="text/javascript" src="../jqplot/plugins/jqplot.categoryAxisRenderer.min.js"></script>
+    <script type="text/javascript" src="../jqplot/plugins/jqplot.barRenderer.min.js"></script>
+    <script type="text/javascript" src="../jqplot/plugins/jqplot.pointLabels.min.js"></script>
+    <script type="text/javascript" src="../js/jquery.csv.js"></script>
+</head>
+<body>
+    <div class="content">
+
+        <div id="title">
+            <h1 id="logo">Transmap</h1>
+            <p>Created for GovHack 2013, by Team <a href="#">Fus Ro Data</a>. <a href="#">Contact us</a>.</p>
+        </div>
+
+        <div id="map" class="map">
+            <div id="routes"></div>
+        </div>
+
+
+        <div class="info" id="info">
+            <h2 id="current_region"></h2>
+            <div id="chartdiv" style="height:350px;width:300px; "></div>
+        </div>
+
+        <div class="trans_menu" id="trans_menu">
+            <a href="#physical">Exercise</a>
+            <a href="#public">Public Transport</a>
+            <a href="#motor">Motor Vehicle</a>
+            <a href="#">Clear</a>
+        </div>
+
+        <script>
+            var paper = Raphael('routes','100%','100%');
+            var startpt;
+            var startpt_text;
+            var startpt_text_region;
+            var paths = [];
+            var chart;
+            var zoom = 1;
+            var start_radius = 8;
+            var chartshown = false;
+            var trans_class = "motor";
+            var trans_classes = {
+                "physical"   : "Physical Activity",
+                "public"     : "Public Transport",
+                "home"       : "At Home",
+                "motor"      : "Motor Vehicle",
+                "other"      : "Other"
+            }
+            var store_data;
+            var store_path;
+            var store_current;
+            var store_scale;
+            var regions = [];
+            var regions_midpoint = [];
+
+            function startpoint(start,data) {
+                var midpoint = getMidPoint(data['id']);
+                var x = midpoint['x'],
+                    y = midpoint['y'];
+
+                console.log('x:'+x+',y:'+y);
+                var scale = store_scale;
+                if (startpt) { startpt.remove(); }
+                if (startpt_text) { startpt_text.remove(); startpt_text_region.remove(); }
+                // regions_midpoint
+                x = x;
+                y = y;
+                startpt = paper.circle(x, y, start_radius);
+                startpt.node.setAttribute("class","start");
+            }
+            function gotopoint(start,data,destination) {
+                var midpoint = getMidPoint(data['id']);
+                var x = midpoint['x'],
+                    y = midpoint['y'];
+                var d_region = searchMap(destination[0]);
+                var percentage = destination[2];
+                if (d_region != undefined) {
+                    // var to_region = getMidPoint(d_region['data']['id']);
+                    // var to_x = to_region.x,
+                    //     to_y = to_region.y;
+                    // var scale = store_scale;
+                    // x = x;
+                    // y = y;
+                    // to_x = to_x;
+                    // to_y = to_y;
+
+                    var endpoint = getMidPoint(d_region.data.id);
+                    var to_x = endpoint['x'],
+                        to_y = endpoint['y'];
+
+                    //var to_region = d_region.path.contours;
+                    //var to_x = to_region[0][0][0],
+                    //    to_y = to_region[0][0][1];
+
+
+                    //var scale = store_scale;
+                    //x = x;
+                    //y = y;
+                    //to_x = to_x * scale;
+                    //to_y = to_y * scale;
+
+                    path = paper.path("M"+x+","+y+"L"+to_x+","+to_y);
+                    path.node.setAttribute("stroke-width", percentage * 10); 
+                    path.node.setAttribute("class","path");
+                    if (path) {
+                        paths.push(path);
+                    }
+
+                    if (data.id != destination[0]) {
+                        var radius = percentage * 300 * store_scale;
+                        var endpoint = paper.circle(to_x, to_y, radius);
+                        var text = paper.text(to_x, to_y, (percentage * 100 * store_scale).toFixed(0) + '%');
+                        endpoint.node.setAttribute("class","end");
+
+                        text.attr({'font-size': percentage * 150 * store_scale});
+                        text.node.setAttribute("class","end_percentage");
+                        var region_name = paper.text(to_x, (parseInt(to_y) + radius + 10), regions[destination[0]]);
+                        region_name.node.setAttribute("class","name");
+
+
+                        // endpoint.toBack();
+                        path.toFront();
+                        text.toFront();
+                        region_name.toFront();
+
+                        paths.push(endpoint);
+                        paths.push(text);
+                        paths.push(region_name);
+
+                    } else {
+
+                        var adjust = 0.5;
+                        var radius = percentage * 300 * adjust * store_scale;
+
+                        startpt.remove();
+                        startpt = paper.circle(x, y, radius);
+                        startpt.node.setAttribute("class","start");
+
+                        startpt_text = paper.text(x, y, (percentage * 100 * adjust * store_scale).toFixed(0) + '%');
+                        startpt_text.attr({'font-size': percentage * 150 * adjust * store_scale});
+                        startpt_text.node.setAttribute("class","start_percentage");
+                        // startpt_text = text;
+
+                        startpt_text_region = paper.text(x, (parseInt(y) + radius + 10), regions[destination[0]]);
+                        startpt_text_region.node.setAttribute("class","name name_start");
+                        startpt_text_region.attr({'font-size': '12px', 'font-weight': 'bold'});
+
+                        // paths.push(text);
+                    }
+                    startpt.toFront();
+                    if (startpt_text) { startpt_text.toFront(); startpt_text_region.toFront(); }
+                    return path;
+                } else {
+                    console.log('Outside of Sydney');
+                }
+            }
+
+            function getMidPoint(id) {
+                var midpoint = regions_midpoint[id];
+                var x = midpoint['x'],
+                    y = midpoint['y'];
+                var obj = {x:x,y:y};
+                return obj;
+            }
+            function searchDestination(origin,transport_class) {
+                var results = [], total = 0, result_num = 0;
+                for (var i=0 ; i < data_gma_class.length; i++)
+                {
+                    var item = data_gma_class[i];
+                    if (item['o_sa3_11'] == origin && item['transport_class'] == transport_class) {
+                        results.push([item['d_sa3_11'],item['employed_persons']]);
+                    }
+                }
+                for (key in results) {
+                    total += results[key][1];
+                }
+                results = results.sort(function(a, b) {return b[1] - a[1]}).slice(0,10);
+                for (key in results) {
+                    results[key][2] = results[key][1]/total;
+                }
+                return results;
+            }
+            function searchMap(region) {
+                var transport_class = "10202";
+                for (key in window.map.pathById) {
+                    var item = window.map.pathById[key];
+                    if (item.data['id'] == region) {
+                        return item;
+                    }
+                }
+            }
+
+            function clearTrans() {
+
+                if (paths.length) {
+                    for (var i=0 ; i < paths.length ; i++) {
+                        paths[i].remove();
+                    }
+                    paths = [];
+                }
+                if (startpt) { startpt.remove(); }
+                if (startpt_text) { startpt_text.remove(); startpt_text_region.remove(); }
+                startpt = startpt_text = startpt_text_region = null;
+
+                $("#chartdiv").hide();
+
+            }
+
+            function updateTrans() {
+
+                if (trans_class == '') {
+                    clearTrans();
+                    trans_class = 'motor';
+                    return false;
+                }
+
+                var references = $('.mpref');
+                for (var i = 0 ; i < references.length; i++) {
+                    var ref = references[i];
+                    var refclass = ref.getAttribute('class');
+                    var id = refclass.substr(6, refclass.length);
+                    var x = ref.getAttribute('cx');
+                    var y = ref.getAttribute('cy');
+                    regions_midpoint[id] = { x: x, y: y };
+                    // regions_midpoint[ref] = {x:avg_x, y:avg_y};
+                }
+
+                var destinations = searchDestination(store_data.id,trans_classes[trans_class]);
+                $('#routes').removeAttr('class');
+                $('#routes').addClass(trans_class);
+
+                if (store_current) { store_current.node.removeAttribute('data-current'); }
+                store_current = store_path;
+                store_current.node.setAttribute('data-current','true');
+
+                startpoint(store_path,store_data);
+
+                if (paths.length) {
+                    for (var i=0 ; i < paths.length ; i++) {
+                        paths[i].remove();
+                    }
+                    startpt_text = null;
+                    paths = [];
+                }
+
+                for (var i=0 ; i < destinations.length ; i++) {
+                    gotopoint(store_path,store_data,destinations[i]);
+                }
+
+
+                /* render chart */
+
+                $("#chartdiv").show();
+
+                
+                $.jqplot.config.enablePlugins = true;
+
+                var row = getrow(data_gma, parseInt(store_data.id));
+
+                var s2 = [['Motor\nVehicle', row.o_class_motor_vehicle]
+                         , ['Public\nTransport', row.o_class_public_transport]
+                         , ['Exercise', row.o_class_physical_activity]
+                         , ['At Home', row.o_class_at_home]
+                         , ['Other', row.o_class_other]];
+
+                $("#current_region").text(row.sa3_name);
+
+                plot3 = $.jqplot('chartdiv', [s2], {
+                    title: {
+                        show: false
+                    },
+                    // Turns on animatino for all series in this plot.
+                    animate: true,
+                    // Will animate plot on calls to plot1.replot({resetAxes:true})
+                    animateReplot: true,
+                    // Provide a custom seriesColors array to override the default colors.
+                    seriesColors: ['#ed2425', '#1fb5ef', '#8dc640', '#ff641d', '#888888'],
+                    seriesDefaults: {
+                        renderer: $.jqplot.BarRenderer,
+                        pointLabels: { show: true },
+                        rendererOptions: {
+                            // Set varyBarColor to tru to use the custom colors on the bars.
+                            varyBarColor: true,
+                            // showDataLabels: false,
+                            shadow: false,
+                            //// By default, data labels show the percentage of the donut/pie.
+                            //// You can show the data 'value' or data 'label' instead.
+                            dataLabels: 'label'
+                        }
+                    },
+                    axesDefaults: {
+                        showTicks: false,       // whether or not to show the tick labels,
+                        showTickMarks: false    // whether or not to show the tick marks
+                    },
+                    axes: {
+                        xaxis: {
+                            renderer: $.jqplot.CategoryAxisRenderer
+                        },
+                        borderWidth: 0,
+                        tickSpacing: 0
+                    },
+                    grid: {
+                        drawGridLines: false,        // wether to draw lines across the grid or not.
+                        gridLineColor: '#f8f8f8',    // *Color of the grid lines.
+                        shadow: false,
+                        background: "#f8f8f8",
+                        borderWidth: 0,
+                    },
+                });
+
+                plot3.redraw(true);
+
+
+                if (!chartshown) {
+                    $('#chartdiv').bind('jqplotDataClick',
+                        function (ev, seriesIndex, pointIndex, data) {
+
+                            switch(pointIndex)
+                            {
+                                case 0:
+                                    trans_class = "motor";
+                                    updateTrans();
+                                    break;
+                                case 1:
+                                    trans_class = "public";
+                                    updateTrans();
+                                    break;
+                                case 2:
+                                    trans_class = "physical";
+                                    updateTrans();
+                                    break;
+                            } // Nothing to map if home or other
+
+                            //"physical"   : "Exercise",
+                            //"public"     : "Public Transport",
+                            //"home"       : "At Home",
+                            //"motor"      : "Motor Vehicle",
+                            //"other"      : "Other"
+
+
+                        }
+                    );
+                    $('.jqplot-point-label.jqplot-point-0').click(function() {
+                        trans_class = 'motor'
+                        updateTrans();
+                        return false;
+                    })
+                    $('.jqplot-point-label.jqplot-point-1').click(function() {
+                        trans_class = 'public'
+                        updateTrans();
+                        return false;
+                    })
+                    $('.jqplot-point-label.jqplot-point-2').click(function() {
+                        trans_class = 'physical'
+                        updateTrans();
+                        return false;
+                    })
+                }
+
+
+
+            }
+
+            function getrow(thedata, id) {
+                var row = [];
+
+                for (var i = 0; i < thedata.length; i++) {
+                    if (thedata[i].sa3_code == id) row = thedata[i];
+                }
+                return row;
+            }
+
+            $("#trans_menu a").click(function() {
+                trans_class = this.hash.slice(1);
+                updateTrans();
+                return false;
+            });
+
+            var data_gma_class, data_gma_mode, data_gma;
+
+            $(function () {
+                $.ajax({
+                url: 'sa3_2011_gma.csv',
+                success: function (data) {
+                    data_gma = $.parseCSV(data).rows;
+                    for (var i=0 ; i < data_gma.length; i++) {
+                        var item = data_gma[i];
+                        // var obj = {};
+                        // obj[item["sa3_code"]] = item["sa3_name"];
+                        // regions.push(obj);
+                        regions[item["sa3_code"]] = item["sa3_name"];
+                    }
+                    }
+                });
+
+
+                centroids = [[new $K.LonLat(151.2181666, -33.36541784), 10201]
+                ,[new $K.LonLat(151.3816976, -33.22581893), 10202]
+                ,[new $K.LonLat(151.2242071, -32.62379473), 10601]
+                ,[new $K.LonLat(151.5487316, -32.70976669), 10602]
+                ,[new $K.LonLat(151.9035572, -32.69742503), 10603]
+                ,[new $K.LonLat(150.79923, -34.48809696), 10701]
+                ,[new $K.LonLat(150.7154585, -34.36944615), 10702]
+                ,[new $K.LonLat(150.7664797, -34.6478533), 10703]
+                ,[new $K.LonLat(150.9320312, -34.2520735), 10704]
+                ,[new $K.LonLat(151.661568, -33.02054542), 11101]
+                ,[new $K.LonLat(151.493709, -33.04450043), 11102]
+                ,[new $K.LonLat(151.7103068, -32.87336206), 11103]
+                ,[new $K.LonLat(150.379721, -35.07540672), 11401]
+                ,[new $K.LonLat(150.3393913, -34.49320786), 11402]
+                ,[new $K.LonLat(150.9952743, -33.7305926), 11501]
+                ,[new $K.LonLat(151.0147551, -33.54750567), 11502]
+                ,[new $K.LonLat(150.7783124, -33.30506696), 11503]
+                ,[new $K.LonLat(150.8930316, -33.6212448), 11504]
+                ,[new $K.LonLat(150.9085011, -33.7690008), 11601]
+                ,[new $K.LonLat(150.8610824, -33.69875015), 11602]
+                ,[new $K.LonLat(150.8388566, -33.77475089), 11603]
+                ,[new $K.LonLat(151.2001913, -33.94541162), 11701]
+                ,[new $K.LonLat(151.1612797, -33.91010694), 11702]
+                ,[new $K.LonLat(151.1996706, -33.88910337), 11703]
+                ,[new $K.LonLat(151.2555253, -33.88235602), 11801]
+                ,[new $K.LonLat(151.242153, -33.94348662), 11802]
+                ,[new $K.LonLat(151.0147829, -33.92756159), 11901]
+                ,[new $K.LonLat(151.0893054, -33.92424691), 11902]
+                ,[new $K.LonLat(151.0778173, -33.9692086), 11903]
+                ,[new $K.LonLat(151.1330925, -33.95966632), 11904]
+                ,[new $K.LonLat(151.1149483, -33.85336506), 12001]
+                ,[new $K.LonLat(151.1679398, -33.87051537), 12002]
+                ,[new $K.LonLat(151.10569, -33.88577696), 12003]
+                ,[new $K.LonLat(151.186878, -33.8071838), 12101]
+                ,[new $K.LonLat(151.1496889, -33.62194628), 12102]
+                ,[new $K.LonLat(151.1509721, -33.73471651), 12103]
+                ,[new $K.LonLat(151.2268786, -33.83128793), 12104]
+                ,[new $K.LonLat(151.2699809, -33.8002745), 12201]
+                ,[new $K.LonLat(151.2792873, -33.63981972), 12202]
+                ,[new $K.LonLat(151.2297683, -33.71016756), 12203]
+                ,[new $K.LonLat(150.7197459, -34.05526108), 12301]
+                ,[new $K.LonLat(150.853533, -34.07812055), 12302]
+                ,[new $K.LonLat(150.612559, -34.14543777), 12303]
+                ,[new $K.LonLat(150.4257913, -33.63700679), 12401]
+                ,[new $K.LonLat(150.2879178, -33.99348038), 12402]
+                ,[new $K.LonLat(150.6787773, -33.811427), 12403]
+                ,[new $K.LonLat(150.7465413, -33.62395882), 12404]
+                ,[new $K.LonLat(150.7859101, -33.78424261), 12405]
+                ,[new $K.LonLat(151.0453144, -33.85548659), 12501]
+                ,[new $K.LonLat(151.046544, -33.79295974), 12502]
+                ,[new $K.LonLat(150.9738073, -33.84817212), 12503]
+                ,[new $K.LonLat(150.992089, -33.79735304), 12504]
+                ,[new $K.LonLat(151.0737039, -33.75419738), 12601]
+                ,[new $K.LonLat(151.1135508, -33.80294228), 12602]
+                ,[new $K.LonLat(150.7472065, -33.94706867), 12701]
+                ,[new $K.LonLat(150.8693637, -33.86210994), 12702]
+                ,[new $K.LonLat(150.9306669, -33.96871296), 12703]
+                ,[new $K.LonLat(151.144056, -34.03587441), 12801]
+                ,[new $K.LonLat(151.0443719, -34.08451295), 12802]]
+
+                $.ajax({
+                url: 'sa3_2011_gma_class.csv',
+                success: function (data) {
+                    data_gma_class = $.parseCSV(data).rows;
+
+                    }
+                });
+                $.ajax({
+                url: 'sa3_2011_gma_mode.csv',
+                success: function (data) {
+                    data_gma_mode = $.parseCSV(data).rows;
+                    } 
+                });
+
+            });
+
+            $(function () {
+                // import some classes
+                window.map = $K.map('#map', 600, 400);
+
+                var resize = function () {
+                    var c = $('#map');
+                    var ratio = map.viewAB.width / map.viewAB.height;
+                    c.height(c.width() / ratio);
+                    zoom = map.size.w / c.width();
+                    map.resize();
+                    store_scale = map.viewBC.width/map.viewAB.width;
+                };
+
+                $(window).resize(resize);
+                console.log(map);
+
+                map.loadMap('sydney.svg', function (map) {
+
+                    map.addLayer('sydney', {
+                         name: 'foreground',
+                         click: function(data, path, event) {
+
+                            store_data = data;
+                            store_path = path;
+
+                            updateTrans();
+                        }
+                    });
+
+                    map.addLayer('newcastle', {
+                        name: 'foreground2',
+                        click: function (data, path, event) {
+
+                            store_data = data;
+                            store_path = path;
+
+                            updateTrans();
+                        }
+                    });
+
+                    map.addLayer('wollongong', {
+                        name: 'foreground3',
+                        click: function (data, path, event) {
+
+                            store_data = data;
+                            store_path = path;
+
+                            updateTrans();
+                        }
+                    });
+
+                    map.addLayer('remaindernsw', {
+                        name: 'background2',
+                        click: function (data, path, event) {
+
+                            store_data = data;
+                            store_path = path;
+
+                            updateTrans();
+                        }
+                    });
+
+                    map.addSymbols({
+                        type: $K.Bubble,
+                        data: centroids,
+                        class: function (d) { return 'mpref' + ' ' + d[1]; },
+                        location: function (d) { return d[0]; },
+                        radius: 10,
+                        style: 'visibility:hidden;z-index:1'
+                    });
+
+                    var references = $('.mpref');
+                    for (var i=0 ; i < references.length; i++) {
+                        var ref = references[i];
+                        var refclass = ref.getAttribute('class');
+                        var id = refclass.substr(6,refclass.length);
+                        var x = ref.getAttribute('cx');
+                        var y = ref.getAttribute('cy');
+                        regions_midpoint[id] = {x:x, y:y};
+                        // regions_midpoint[ref] = {x:avg_x, y:avg_y};
+                    }
+
+                    // regions_midpoint[map['pathById'][key]['data']['id']] = {x:avg_x, y:avg_y};
+
+
+
+                    // console.log(map);
+                    // for (key in map['pathById']) {
+                    //     var pathelm = document.getElementById(key);
+                    //     // var path = $('#'+path['data']['id']);
+                    //     // console.log(document.getElementById(key));
+                    //     // console.log(document.getElementById(path['data']['id']));
+                    //     var totalPathLength = pathelm.getTotalLength();
+                    //     var step = totalPathLength / 100;
+                    //     var total_x = 0, total_y = 0;
+                    //     var num = 0;
+                    //     for(var dist=0; dist < totalPathLength; dist+=step)
+                    //     {
+                    //         var pt = pathelm.getPointAtLength(dist);
+                    //         total_x += pt.x;
+                    //         total_y += pt.y;
+                    //         num++;
+                    //     }
+                    //     var avg_x = total_x/num;
+                    //     var avg_y = total_y/num;
+                    //     regions_midpoint[map['pathById'][key]['data']['id']] = {x:avg_x, y:avg_y};
+                    // }
+
+
+
+                    resize();
+
+                }, { padding: -6 });
+
+            });
+
+
+        </script>
+
+    </div>
+</body>
+</html>
+
